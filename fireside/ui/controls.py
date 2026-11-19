@@ -104,6 +104,12 @@ class Controls(Gtk.Box):
         self.audio_only = Gtk.ToggleButton(icon_name='audio-headphones-symbolic', focus_on_click=False,
                                            tooltip_text='Play as audio only', action_name='win.audio-only')
         self.audio_only.add_css_class('flat')
+        self.mini_btn = _button('fireside-mini-symbolic', 'Mini player (Ctrl+M)', 'win.mini')
+        self.cast_btn = Gtk.MenuButton(icon_name='fireside-cast-symbolic', tooltip_text='Play on a TV or speaker',
+                                       focus_on_click=False, direction=Gtk.ArrowType.UP)
+        self.cast_btn.add_css_class('flat')
+        from .cast_popover import CastPopover
+        self.cast_btn.set_popover(CastPopover(win))
 
         # What's playing, shown when the bar sits under the library.
         self.now = Gtk.Button(focus_on_click=False, tooltip_text='Show what is playing', visible=False)
@@ -170,7 +176,7 @@ class Controls(Gtk.Box):
         for w in (self.prev, self.back, self.play, self.fwd, self.next):
             mid.append(w)
         right = Gtk.Box(spacing=2, hexpand=True, halign=Gtk.Align.END)
-        for w in (self.list_btn, self.mute, self.vol, self.full):
+        for w in (self.mini_btn, self.cast_btn, self.list_btn, self.mute, self.vol, self.full):
             right.append(w)
         for w in (left, mid, right):
             self.btn_row.append(w)
@@ -236,6 +242,11 @@ class Controls(Gtk.Box):
         for i, name in enumerate(texts):
             tracks.append(name, f'win.subtitle-track({i})')
         menu.append_section(None, tracks)
+        timing = Gio.Menu()
+        timing.append('Show Earlier (G)', 'win.sub-earlier')
+        timing.append('Show Later (H)', 'win.sub-later')
+        timing.append('Normal Timing', 'win.sub-reset')
+        menu.append_section('Timing', timing)
         extra = Gio.Menu()
         extra.append('Add subtitle file…', 'win.load-subtitle')
         menu.append_section(None, extra)
@@ -332,7 +343,8 @@ class Controls(Gtk.Box):
         hours = dur >= 3600
         self.cur.set_label(fmt_time(pos, hours))
         if not dur:
-            self.end_label.set_label('–:––' if self.player.uri else '0:00')
+            live = self.player.uri and not self.player.uri.startswith('file:')
+            self.end_label.set_label('Live' if live else ('–:––' if self.player.uri else '0:00'))
         elif self.settings['time_mode'] == 'remaining':
             self.end_label.set_label('-' + fmt_time(dur - pos, hours))
         else:
@@ -345,7 +357,7 @@ class Controls(Gtk.Box):
         value = max(0.0, min(value, self._duration))
         self.seek.set_value(value)
         self._show_times(value, self._duration)
-        self.player.seek(value, fast=True)
+        self.win.seek_to(value, fast=True)
         if self._seek_timer:
             GLib.source_remove(self._seek_timer)
         self._seek_timer = GLib.timeout_add(220, self._finish_seek, value)
@@ -353,7 +365,7 @@ class Controls(Gtk.Box):
 
     def _finish_seek(self, value):
         self._seek_timer = 0
-        self.player.seek(value)
+        self.win.seek_to(value)
         self._dragging = False
         return False
 
@@ -369,7 +381,7 @@ class Controls(Gtk.Box):
         """True while the pointer is on the bar or one of its menus is open."""
         if self._dragging:
             return True
-        for b in (self.audio_btn, self.subs_btn, self.speed_btn):
+        for b in (self.audio_btn, self.subs_btn, self.speed_btn, self.cast_btn):
             if b.get_active():
                 return True
         return False

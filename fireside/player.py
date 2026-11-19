@@ -93,6 +93,8 @@ class Player(GObject.Object):
         'eos': (GObject.SignalFlags.RUN_FIRST, None, ()),
         'error': (GObject.SignalFlags.RUN_FIRST, None, (str,)),
         'ready': (GObject.SignalFlags.RUN_FIRST, None, ()),
+        # A gapless switch: playbin moved on to the next file by itself.
+        'track-changed': (GObject.SignalFlags.RUN_FIRST, None, (str,)),
     }
 
     def __init__(self):
@@ -135,6 +137,12 @@ class Player(GObject.Object):
         bus.add_signal_watch()
         bus.connect('message', self._on_message)
         self.playbin.connect('audio-tags-changed', lambda *_: GLib.idle_add(self._tracks_changed))
+        # Gapless: the window may hand over the next file just before this one ends.
+        self.next_provider = None
+        self._gapless_uri = None
+        self._streams_started = 0
+        self.sub_offset = 0.0
+        self.playbin.connect('about-to-finish', self._about_to_finish)
         self.playbin.connect('text-tags-changed', lambda *_: GLib.idle_add(self._tracks_changed))
 
     # ---- loading -------------------------------------------------------------------------
@@ -155,7 +163,11 @@ class Player(GObject.Object):
         self._seek_on_ready = start if start and start > 0 else None
         self.playbin.props.uri = uri
         self.playbin.props.suburi = sub_uri
+        self._gapless_uri = None
+        self._streams_started = 0
+        self.set_sub_offset(0.0)
         self.emit('media-changed', uri)
+        self.emit('position', self._known_pos, 0.0)
         self.emit('tags-changed')
         self.playbin.set_state(Gst.State.PLAYING if play and not self._seek_on_ready else Gst.State.PAUSED)
 
@@ -325,6 +337,40 @@ class Player(GObject.Object):
         flags = int(self.playbin.props.flags)
         self.playbin.props.flags = (flags | FLAG_TEXT) if on else (flags & ~FLAG_TEXT)
 
+    def set_sub_offset(self, seconds):
+        """Move subtitles later (positive) or earlier (negative) against the picture."""
+        self.sub_offset = round(seconds, 2)
+        try:
+            self.playbin.props.text_offset = int(self.sub_offset * SECOND)
+        except (AttributeError, TypeError):
+            pass
+
+    def _about_to_finish(self, _pb):
+        # Runs on a streaming thread: only plain Python here, no widgets.
+        provider = self.next_provider
+        nxt = provider() if provider else None
+        if nxt:
+            self._gapless_uri = nxt
+            self.playbin.props.suburi = None
+            self.playbin.props.uri = nxt
+
+    def _gapless_switch(self):
+        uri = self._gapless_uri
+        self._gapless_uri = None
+        if not uri:
+            return
+        self.uri = uri
+        self.sub_uri = None
+        self.duration = 0.0
+        self.tags = {}
+        self.stream_title = None
+        self._known_pos = 0.0
+        self.set_sub_offset(0.0)
+        self._query_duration()
+        self.emit('track-changed', uri)
+        self.emit('tags-changed')
+        self.emit('tracks-changed')
+
     def set_subtitle_font(self, desc):
         self.playbin.props.subtitle_font_desc = desc
 
@@ -409,6 +455,10 @@ class Player(GObject.Object):
                 self._buffering = False
                 if self._want_playing:
                     self.playbin.set_state(Gst.State.PLAYING)
+        elif t == Gst.MessageType.STREAM_START:
+            self._streams_started += 1
+            if self._streams_started > 1 and self._gapless_uri:
+                self._gapless_switch()
         elif t == Gst.MessageType.EOS:
             self._stop_ticker()
             self.emit('eos')

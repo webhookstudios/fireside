@@ -1,5 +1,6 @@
 """The main window: the stage, the control bar, the queue and the library."""
 import os
+import time
 
 import gi
 
@@ -44,6 +45,9 @@ class FiresideWindow(Adw.ApplicationWindow):
         self._hidden = False
         self._error_shown = False
         self.mpris = None
+        self.mini = None
+        self.cast = None
+        self.cast_server = None
 
         self._build()
         self._actions()
@@ -68,6 +72,9 @@ class FiresideWindow(Adw.ApplicationWindow):
         self.pl_toggle = Gtk.ToggleButton(icon_name='sidebar-show-right-symbolic', tooltip_text='Queue (F9)',
                                           action_name='win.playlist')
         self.header.pack_end(self.pl_toggle)
+        self.sleep_btn = Gtk.MenuButton(icon_name='alarm-symbolic', visible=False, menu_model=self._sleep_menu())
+        self.sleep_btn.add_css_class('accent')
+        self.header.pack_end(self.sleep_btn)
         self.lib_btn = Gtk.Button(icon_name='view-grid-symbolic', tooltip_text='Library', visible=False)
         self.lib_btn.connect('clicked', lambda *_: self.show_page(
             'player' if self.main_stack.get_visible_child_name() == 'welcome' else 'welcome'))
@@ -120,9 +127,24 @@ class FiresideWindow(Adw.ApplicationWindow):
 
         self.tview = Adw.ToolbarView(content=self.main_stack, top_bar_style=Adw.ToolbarStyle.FLAT)
         self.tview.add_top_bar(self.header)
+        self.cast_banner = Adw.Banner(button_label='Stop Casting')
+        self.cast_banner.connect('button-clicked', lambda *_: self.stop_cast())
+        self.tview.add_top_bar(self.cast_banner)
 
         self.plview = PlaylistView(self.playlist, self.settings)
-        self.split = Adw.OverlaySplitView(sidebar=self.plview, content=self.tview, sidebar_width_fraction=0.28,
+        # The control bar drops its less-used buttons when the player area is narrow.
+        self.stage_bin = Adw.BreakpointBin(child=self.tview, width_request=340, height_request=260)
+        c = self.controls
+        narrow = Adw.Breakpoint.new(Adw.BreakpointCondition.parse('max-width: 1000px'))
+        for w in (c.vol, c.fx_btn, c.audio_only, c.mini_btn):
+            narrow.add_setter(w, 'visible', False)
+        self.stage_bin.add_breakpoint(narrow)
+        tight = Adw.Breakpoint.new(Adw.BreakpointCondition.parse('max-width: 760px'))
+        for w in (c.vol, c.fx_btn, c.audio_only, c.mini_btn, c.speed_btn, c.cast_btn, c.back, c.fwd,
+                  c.audio_btn):
+            tight.add_setter(w, 'visible', False)
+        self.stage_bin.add_breakpoint(tight)
+        self.split = Adw.OverlaySplitView(sidebar=self.plview, content=self.stage_bin, sidebar_width_fraction=0.28,
                                           min_sidebar_width=240, max_sidebar_width=380)
         self.toasts = Adw.ToastOverlay(child=self.split)
         self.set_content(self.toasts)
@@ -146,6 +168,8 @@ class FiresideWindow(Adw.ApplicationWindow):
             fit.append(name, f'win.fit::{key}')
         s.append_submenu('Video Size', fit)
         s.append('Play as Audio Only', 'win.audio-only')
+        s.append_submenu('Sleep Timer', self._sleep_menu())
+        s.append('Mini Player', 'win.mini')
         s.append('Effects and Filters', 'win.effects')
         s.append('Take Snapshot', 'win.snapshot')
         s.append('Media Information', 'win.info')
@@ -186,6 +210,17 @@ class FiresideWindow(Adw.ApplicationWindow):
         self.recent_list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
         self.recent_list.add_css_class('boxed-list')
         self.recent_group.add(self.recent_list)
+        self.cont_group = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, visible=False)
+        cont_label = Gtk.Label(label='Continue watching', xalign=0)
+        cont_label.add_css_class('heading')
+        self.cont_group.append(cont_label)
+        self.cont_box = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, activate_on_single_click=True,
+                                    max_children_per_line=4, min_children_per_line=1, column_spacing=12,
+                                    row_spacing=12, homogeneous=True)
+        self.cont_box.connect('child-activated', lambda _f, c: self.open_sources([c.uri], replace=True))
+        self.cont_group.append(self.cont_box)
+        self._cont_tiles = {}
+        box.append(self.cont_group)
         box.append(self.recent_group)
         page.set_child(box)
         return page
@@ -210,6 +245,69 @@ class FiresideWindow(Adw.ApplicationWindow):
             self.recent_list.append(row)
             self.recent_menu.append(r['title'][:60], f"win.open-recent({GLib.Variant('s', r['uri']).print_(False)})")
         self.recent_group.set_visible(bool(self.state.recent))
+        self._refresh_continue()
+
+    def _refresh_continue(self):
+        """Videos stopped partway, newest first, with how much is left."""
+        from ..library import kind_of
+        self.cont_box.remove_all()
+        self._cont_tiles = {}
+        order = [r['uri'] for r in self.state.recent]
+        uris = [u for u in reversed(list(self.state.resume)) if u not in order]
+        uris = [u for u in order if u in self.state.resume] + uris
+        shown = 0
+        for uri in uris:
+            path = Gio.File.new_for_uri(uri).get_path()
+            if not path or not os.path.exists(path) or kind_of(path) != 'video':
+                continue
+            pos = self.state.resume[uri]
+            length = self.state.lengths.get(uri, 0)
+            child = Gtk.FlowBoxChild()
+            child.uri = uri
+            child.add_css_class('cont-tile')
+            vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+            frame = Gtk.Overlay(height_request=110)
+            frame.add_css_class('lib-thumb')
+            frame.set_overflow(Gtk.Overflow.HIDDEN)
+            frame.set_child(Gtk.Image(icon_name='video-x-generic-symbolic', pixel_size=32))
+            pic = Gtk.Picture(content_fit=Gtk.ContentFit.COVER, can_shrink=True, visible=False)
+            frame.add_overlay(pic)
+            if length:
+                bar = Gtk.ProgressBar(fraction=min(1.0, pos / length), valign=Gtk.Align.END)
+                bar.add_css_class('cont-progress')
+                frame.add_overlay(bar)
+            forget = Gtk.Button(icon_name='window-close-symbolic', tooltip_text='Remove from Continue watching',
+                                halign=Gtk.Align.END, valign=Gtk.Align.START, margin_top=6, margin_end=6)
+            forget.add_css_class('osd')
+            forget.add_css_class('circular')
+            forget.add_css_class('cont-forget')
+            forget.connect('clicked', lambda _b, u=uri: (self.state.forget(u), self.state.save(),
+                                                          self._refresh_continue()))
+            frame.add_overlay(forget)
+            vbox.append(frame)
+            name = Gtk.Label(label=title_for(uri), xalign=0, ellipsize=3)
+            name.add_css_class('lib-name')
+            vbox.append(name)
+            left = f'{fmt_time(length - pos)} left' if length else f'Stopped at {fmt_time(pos)}'
+            meta = Gtk.Label(label=left, xalign=0)
+            meta.add_css_class('caption')
+            meta.add_css_class('dim-label')
+            vbox.append(meta)
+            child.set_child(vbox)
+            child.set_tooltip_text(f'Resume {title_for(uri)} at {fmt_time(pos)}')
+            self.cont_box.append(child)
+
+            def show(img, pic=pic):
+                pic.set_file(Gio.File.new_for_path(img))
+                pic.set_visible(True)
+            self._cont_tiles[path] = show
+            img = self.app.thumbs.request(path)
+            if img:
+                show(img)
+            shown += 1
+            if shown >= 8:
+                break
+        self.cont_group.set_visible(shown > 0)
 
     # ---- actions -------------------------------------------------------------------------
 
@@ -242,6 +340,11 @@ class FiresideWindow(Adw.ApplicationWindow):
         self._add('lib-add-to-playlist', self._lib_add_to_playlist, '(ss)')
         self._add('lib-new-playlist', lambda _a, v: self.ask_playlist_name(
             None, lambda name: self._add_to_named(name, v.unpack())), 's')
+        self._add('mini', lambda *_: self.toggle_mini())
+        self._add('sub-earlier', lambda *_: self._nudge_subs(-0.1))
+        self._add('sub-later', lambda *_: self._nudge_subs(0.1))
+        self._add('sub-reset', lambda *_: self._nudge_subs(None))
+        self.sleep_action = self._add('sleep', lambda a, v: self.set_sleep(v.unpack()), 's', GLib.Variant('s', 'off'))
         self.audio_only_action = self._add('audio-only', self._toggle_audio_only, state=GLib.Variant('b', False))
         self._add('show-library', lambda *_: self.show_page('welcome'))
         self._add('clear-playlist', lambda *_: self._clear_playlist())
@@ -308,12 +411,21 @@ class FiresideWindow(Adw.ApplicationWindow):
         p.connect('state-changed', self._on_state)
         p.connect('media-changed', lambda *_: self._sync_enabled())
         p.connect('ready', self._on_ready)
+        p.connect('track-changed', self._on_gapless)
+        p.next_provider = lambda: self._gapless_next
+        self._gapless_next = None
+        self._gapless_index = -1
+        self._sleep_mode = 'off'
+        self._sleep_deadline = 0
+        self._sleep_timer = 0
+        self._fading = False
+        self.app.thumbs.connect('ready', lambda _t, path, img: self._cont_tiles.get(path, lambda i: None)(img))
         p.connect('tags-changed', lambda *_: self._on_tags())
         p.connect('video-changed', lambda _p, v: self._on_video(v))
         p.connect('eos', lambda *_: self._on_eos())
         p.connect('error', lambda _p, msg: self._on_error(msg))
         p.connect('buffering', lambda _p, pct: self.spinner.set_visible(pct < 100 and p.uri is not None))
-        self.playlist.connect('changed', lambda *_: self._sync_enabled())
+        self.playlist.connect('changed', lambda *_: (self._sync_enabled(), self._plan_next()))
         self.settings.connect('changed', self._on_setting)
         self.split.connect('notify::show-sidebar', self._sidebar_shown)
         self.connect('notify::fullscreened', self._on_fullscreen)
@@ -366,6 +478,8 @@ class FiresideWindow(Adw.ApplicationWindow):
         s.append_submenu('Video Size', fit)
         s.append('Add Subtitle File…', 'win.load-subtitle')
         s.append('Play as Audio Only', 'win.audio-only')
+        s.append_submenu('Sleep Timer', self._sleep_menu())
+        s.append('Mini Player', 'win.mini')
         s.append('Effects and Filters', 'win.effects')
         s.append('Take Snapshot', 'win.snapshot')
         menu.append_section(None, s)
@@ -399,6 +513,8 @@ class FiresideWindow(Adw.ApplicationWindow):
         s = self.settings
         if key == 'volume':
             self.player.set_volume(s['volume'])
+            if self.cast:
+                self.cast.set_volume(s['volume'])
         elif key == 'muted':
             self.player.set_muted(s['muted'])
         elif key in ('eq_on', 'eq_bands'):
@@ -473,6 +589,16 @@ class FiresideWindow(Adw.ApplicationWindow):
             self.player.audio_only = audio_only
             self.audio_only_action.set_state(GLib.Variant('b', audio_only))
         self.play_index(start, show_player=show_player)
+        self._sync_enabled()
+
+    def play_entries(self, entries, start=0):
+        """Replace the queue with named streams (TV channels) and play one."""
+        self.playlist.clear()
+        self.playlist.add_entries(entries)
+        if self.player.audio_only:
+            self.player.audio_only = False
+            self.audio_only_action.set_state(GLib.Variant('b', False))
+        self.play_index(start, show_player=True)
         self._sync_enabled()
 
     def _lib_play(self, path, audio):
@@ -561,7 +687,9 @@ class FiresideWindow(Adw.ApplicationWindow):
         start = self.state.resume.get(item.uri, 0) if self.settings['resume'] else 0
         sub = find_subtitle(item.uri) if self.settings['sub_auto'] else None
         self._error_shown = False
-        self.player.load(item.uri, play=True, start=start, sub_uri=sub)
+        self.player.load(item.uri, play=self.cast is None, start=start, sub_uri=sub)
+        if self.cast:
+            self.cast.load(item.uri, item.title, start)
         self.player.rate = self.settings['speed']
         if show_player is None:
             show_player = self.main_stack.get_visible_child_name() == 'player'
@@ -587,14 +715,18 @@ class FiresideWindow(Adw.ApplicationWindow):
 
     def _previous(self):
         # Like a CD player: the first press goes back to the start of this item.
-        if self.player.position() > 4 or len(self.playlist) < 2:
-            self.player.seek(0)
+        pos = self.cast.position if self.cast else self.player.position()
+        if pos > 4 or len(self.playlist) < 2:
+            self.seek_to(0)
         else:
             self.go(-1, user=True)
 
     def stop(self):
+        if self.cast:
+            self.stop_cast(resume_here=False)
         self._save_resume()
         self.player.stop()
+        self._refresh_continue()
         self.playlist.set_current(-1)
         self.show_page('welcome')
         self._update_title()
@@ -602,7 +734,17 @@ class FiresideWindow(Adw.ApplicationWindow):
         self._sync_inhibit()
         self.big_play.set_visible(False)
 
+    def seek_to(self, seconds, fast=False):
+        if self.cast:
+            if not fast:
+                self.cast.seek(seconds)
+            return
+        self.player.seek(seconds, fast=fast)
+
     def _toggle_play(self):
+        if self.cast:
+            self.cast.toggle()
+            return
         if self.player.uri is None and len(self.playlist):
             self.play_index(max(0, self.playlist.current))
             return
@@ -624,7 +766,183 @@ class FiresideWindow(Adw.ApplicationWindow):
         if self.mpris and state:
             pass
 
+    # ---- gapless -----------------------------------------------------------------------
+
+    def _plan_next(self):
+        """Work out now which file follows, so playbin can start it with no gap.
+        Only for music: videos and anything with a resume point start the normal way."""
+        from ..library import kind_of
+        self._gapless_next, self._gapless_index = None, -1
+        p = self.player
+        if not p.uri or p.has_video or self._sleep_mode == 'end' or not self.settings['autoplay_next']:
+            return
+        if self.settings['repeat'] == 'one':
+            i = self.playlist.current
+        else:
+            i = self.playlist.neighbor(1, self.settings['repeat'] == 'all')
+        if i < 0 or i >= len(self.playlist):
+            return
+        uri = self.playlist.items[i].uri
+        path = Gio.File.new_for_uri(uri).get_path()
+        if not path or kind_of(path) != 'audio' or uri in self.state.resume:
+            return
+        self._gapless_next, self._gapless_index = uri, i
+
+    def _on_gapless(self, _p, uri):
+        i = self._gapless_index
+        if not (0 <= i < len(self.playlist)) or self.playlist.items[i].uri != uri:
+            i = next((k for k, it in enumerate(self.playlist.items) if it.uri == uri), -1)
+        if i >= 0:
+            self.playlist.set_current(i)
+            item = self.playlist.items[i]
+            self.state.add_recent(uri, item.title)
+            self.state.save()
+            self.refresh_recent()
+        self.hearth.show_media(self.media_title(), '', '', None)
+        self._update_title()
+        self.controls.update_now()
+        self._plan_next()
+        if self.mpris:
+            self.mpris.changed('Metadata')
+
+    # ---- casting ------------------------------------------------------------------------
+
+    def start_cast(self, receiver):
+        from ..cast import CastSession, FileServer
+        if self.player.uri is None:
+            return
+        if self.cast:
+            self.stop_cast(resume_here=False)
+        if self.cast_server is None:
+            try:
+                self.cast_server = FileServer()
+            except OSError as e:
+                self.toast(f"Couldn't start casting: {e.strerror}")
+                return
+        pos = self.player.position()
+        self.player.pause()
+        session = CastSession(receiver, self.cast_server)
+        session.connect('status', self._cast_status)
+        session.connect('failed', lambda _s, msg: (self.toast(f'Lost the connection to {receiver.name}. {msg}'),
+                                                    self.stop_cast()))
+        session.connect('finished', lambda *_: self._on_eos())
+        session.connect('started', lambda *_: session.set_volume(self.settings['volume']))
+        self.cast = session
+        session.position = pos
+        session.load(self.player.uri, self.media_title(), pos)
+        self.cast_banner.set_title(f'Playing on {GLib.markup_escape_text(receiver.name)}')
+        self.cast_banner.set_revealed(True)
+        self.controls.cast_btn.add_css_class('accent')
+        self.big_play.set_visible(False)
+        self.note(f'Sending to {receiver.name}…')
+
+    def _cast_status(self, _s, state, pos, dur):
+        p = self.player
+        p.emit('position', pos, dur)
+        p._set_state('playing' if state in ('playing', 'loading') else 'paused')
+
+    def stop_cast(self, resume_here=True):
+        session, self.cast = self.cast, None
+        if not session:
+            return
+        pos = session.position
+        session.stop()
+        self.cast_banner.set_revealed(False)
+        self.controls.cast_btn.remove_css_class('accent')
+        if resume_here and self.player.uri:
+            self.player.seek(pos)
+            self.player._set_state('paused')
+            self._sync_big_play()
+            self.note('Back on this computer, paused')
+
+    def toggle_mini(self):
+        if self.mini:
+            self.mini.close()
+            return
+        from .mini import MiniPlayer
+        if self.is_fullscreen():
+            self.unfullscreen()
+        self.mini = MiniPlayer(self)
+        self.mini.present()
+        self.set_visible(False)
+
+    # ---- subtitle timing and sleep timer ------------------------------------------------
+
+    def _nudge_subs(self, delta):
+        if self.player.uri is None:
+            return
+        off = 0.0 if delta is None else self.player.sub_offset + delta
+        self.player.set_sub_offset(off)
+        if abs(off) < 0.05:
+            self.note('Subtitle timing: normal')
+        else:
+            self.note(f"Subtitles {abs(off):.1f} s {'later' if off > 0 else 'earlier'}")
+
+    SLEEP_CHOICES = (('off', 'Off'), ('15', '15 minutes'), ('30', '30 minutes'), ('45', '45 minutes'),
+                     ('60', '1 hour'), ('90', '1½ hours'), ('end', 'End of this item'))
+
+    def _sleep_menu(self):
+        menu = Gio.Menu()
+        for key, label in self.SLEEP_CHOICES:
+            menu.append(label, f'win.sleep::{key}')
+        return menu
+
+    def set_sleep(self, mode):
+        self.sleep_action.set_state(GLib.Variant('s', mode))
+        self._sleep_mode = mode
+        if self._sleep_timer:
+            GLib.source_remove(self._sleep_timer)
+            self._sleep_timer = 0
+        self._end_fade()
+        if mode == 'off':
+            self.sleep_btn.set_visible(False)
+            self.note('Sleep timer off')
+        elif mode == 'end':
+            self._sleep_deadline = 0
+            self.sleep_btn.set_visible(True)
+            self.sleep_btn.set_tooltip_text('Stops at the end of this item. Click to change')
+            self.note('Stopping at the end of this item')
+        else:
+            self._sleep_deadline = time.monotonic() + int(mode) * 60
+            self.sleep_btn.set_visible(True)
+            self._sleep_timer = GLib.timeout_add_seconds(1, self._sleep_tick)
+            self._sleep_tick()
+            self.note(f'Stopping in {dict(self.SLEEP_CHOICES)[mode]}')
+        self._plan_next()
+
+    def _sleep_tick(self):
+        left = self._sleep_deadline - time.monotonic()
+        mins = int(left // 60) + 1
+        self.sleep_btn.set_tooltip_text(f"Stops in {mins} minute{'' if mins == 1 else 's'}. Click to change")
+        if left <= 10 and self.player.state == 'playing':
+            # Fade out over the last ten seconds rather than cutting off.
+            self._fading = True
+            self.player.set_volume(self.settings['volume'] * max(0.0, left) / 10)
+        if left <= 0:
+            self._sleep_timer = 0
+            self._sleep_now()
+            return False
+        return True
+
+    def _sleep_now(self):
+        self.player.pause()
+        self._save_resume()
+        self._end_fade()
+        self._sleep_mode = 'off'
+        self.sleep_action.set_state(GLib.Variant('s', 'off'))
+        self.sleep_btn.set_visible(False)
+        if self.is_fullscreen():
+            self.unfullscreen()
+        self.toast('Sleep timer: paused')
+        self._plan_next()
+
+    def _end_fade(self):
+        if self._fading:
+            self._fading = False
+            self.player.set_volume(self.settings['volume'])
+
     def _on_ready(self, _p):
+        self._plan_next()
         self._sync_enabled()
         self.controls.show_now_playing(self.main_stack.get_visible_child_name() == 'welcome')
         self._update_title()
@@ -679,7 +997,11 @@ class FiresideWindow(Adw.ApplicationWindow):
 
     def _on_eos(self):
         uri = self.player.uri
-        self.state.resume.pop(uri, None)
+        self.state.forget(uri)
+        if self._sleep_mode == 'end':
+            self._sleep_now()
+            self.player.seek(0)
+            return
         if self.settings['repeat'] == 'one':
             self.player.seek(0)
             self.player.play()
@@ -727,7 +1049,10 @@ class FiresideWindow(Adw.ApplicationWindow):
         if self.player.uri is None:
             return
         n = self.settings['skip_seconds'] * mult
-        self.player.skip(n)
+        if self.cast:
+            self.cast.seek(max(0.0, self.cast.position + n))
+        else:
+            self.player.skip(n)
         self.note(('+' if n > 0 else '−') + f'{abs(n)} s')
         if self.mpris:
             GLib.timeout_add(150, lambda: self.mpris.seeked(self.player.position()) and False)
@@ -914,7 +1239,7 @@ class FiresideWindow(Adw.ApplicationWindow):
         'f': 'fullscreen', 'F11': 'fullscreen', 'n': 'next', 'p': 'previous', 'period': 'step-forward',
         'comma': 'step-back', 'bracketright': 'speed-up', 'bracketleft': 'speed-down',
         'equal': 'speed-reset', 'BackSpace': 'speed-reset', 'v': 'cycle-subtitle', 'b': 'cycle-audio',
-        's': 'snapshot', 'a': 'cycle-fit', 'F9': 'playlist', 'AudioPlay': 'toggle-play',
+        's': 'snapshot', 'g': 'sub-earlier', 'h': 'sub-later', 'a': 'cycle-fit', 'F9': 'playlist', 'AudioPlay': 'toggle-play',
         'AudioPause': 'toggle-play', 'AudioNext': 'next', 'AudioPrev': 'previous', 'AudioStop': 'stop',
     }
 
@@ -1199,6 +1524,11 @@ class FiresideWindow(Adw.ApplicationWindow):
         return True
 
     def _on_close(self, *_):
+        if self.cast:
+            self.stop_cast(resume_here=False)
+        if self.cast_server:
+            self.cast_server.close()
+            self.cast_server = None
         self._save_resume()
         if not self.is_fullscreen() and not self.is_maximized():
             w, h = self.get_default_size()

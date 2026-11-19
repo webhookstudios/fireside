@@ -309,6 +309,24 @@ row:hover .side-remove { opacity: 0.7; }
 .now-playing { padding: 2px 8px 2px 2px; }
 .now-art { border-radius: 8px; min-width: 40px; min-height: 40px; background-color: alpha(currentColor, 0.08); }
 
+.cont-tile { padding: 4px; border-radius: 14px; }
+.cont-tile:hover { background-color: alpha(currentColor, 0.06); }
+.cont-forget { opacity: 0; transition: opacity 120ms ease-out; }
+.cont-tile:hover .cont-forget, .cont-forget:focus-visible { opacity: 1; }
+progressbar.cont-progress trough { min-height: 4px; border-radius: 0; background-color: rgb(0 0 0 / 45%); }
+progressbar.cont-progress progress { min-height: 4px; border-radius: 0; background-color: var(--accent-bg-color); }
+.mini-art { border-radius: 12px; background-color: var(--fs-stage); color: var(--fs-glow-b); }
+progressbar.mini-progress trough, progressbar.mini-progress progress { min-height: 4px; border-radius: 999px; }
+progressbar.mini-progress progress { background-color: var(--accent-bg-color); }
+.tv-grid { background: transparent; padding: 0 18px 24px 18px; }
+.tv-grid > child { border-radius: 16px; }
+.tv-grid > child:hover { background-color: alpha(currentColor, 0.06); }
+.tv-logo { background-color: alpha(currentColor, 0.07); border-radius: 12px; }
+.tv-star { opacity: 0; transition: opacity 120ms ease-out; }
+.tv-grid > child:hover .tv-star, .tv-star.on, .tv-star:focus-visible { opacity: 1; }
+.tv-star.on { color: var(--accent-color); }
+.tv-live { background-color: #c0392b; color: white; font-size: 0.7em; font-weight: 800;
+           border-radius: 4px; padding: 1px 5px; letter-spacing: 0.05em; }
 .eq-band scale { min-height: 150px; }
 .eq-band label { font-size: 0.8em; opacity: 0.75; font-feature-settings: "tnum"; }
 '''

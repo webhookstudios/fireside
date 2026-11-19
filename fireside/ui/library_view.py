@@ -147,6 +147,9 @@ class LibraryView(Gtk.Box):
         self.stack.add_named(self._folder_page(), 'folder')
         self.stack.add_named(self._music_page(), 'music')
         self.stack.add_named(self._collection_page(), 'collection')
+        from .live_tv import LiveTVPage
+        self.tv_page = LiveTVPage(win)
+        self.stack.add_named(self.tv_page, 'tv')
         self.append(self.stack)
 
         self.thumbs.connect('ready', self._thumb_ready)
@@ -177,7 +180,8 @@ class LibraryView(Gtk.Box):
         self.side.remove_all()
         rows = [self._side_row('go-home-symbolic', 'Home', ('home', None)),
                 self._side_row('folder-music-symbolic', 'Music', ('music', None)),
-                self._side_row('folder-videos-symbolic', 'Videos', ('folder', videos_dir()))]
+                self._side_row('folder-videos-symbolic', 'Videos', ('folder', videos_dir())),
+                self._side_row('fireside-tv-symbolic', 'Live TV', ('tv', None))]
         for path in self.settings['favorites']:
             rows.append(self._side_row('starred-symbolic', os.path.basename(path.rstrip('/')) or path,
                                        ('folder', path), 'Favorites',
@@ -209,6 +213,8 @@ class LibraryView(Gtk.Box):
             self.show_home()
         elif kind == 'music':
             self.show_music()
+        elif kind == 'tv':
+            self.show_tv()
         elif kind == 'folder':
             self.show_folder(val)
         elif kind == 'playlist':
@@ -237,6 +243,11 @@ class LibraryView(Gtk.Box):
     def show_home(self):
         self.stack.set_visible_child_name('home')
         self._select(('home', None))
+
+    def show_tv(self):
+        self.stack.set_visible_child_name('tv')
+        self._select(('tv', None))
+        self.tv_page.shown()
 
     def show_music(self):
         self.stack.set_visible_child_name('music')

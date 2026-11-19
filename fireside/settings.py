@@ -54,6 +54,8 @@ DEFAULTS = {
     # Library
     'favorites': [],
     'folder_view': 'grid',       # grid, list
+    'tv_country': '',            # '' = from the system's region
+    'tv_favorites': [],
     # Snapshots
     'snapshot_dir': '',
     # Window
@@ -137,6 +139,7 @@ class State:
         data = _load(self._path)
         self.resume = data.get('resume', {}) if isinstance(data.get('resume'), dict) else {}
         self.recent = [r for r in data.get('recent', []) if isinstance(r, dict) and 'uri' in r]
+        self.lengths = data.get('lengths', {}) if isinstance(data.get('lengths'), dict) else {}
 
     def remember(self, uri, position, duration):
         # Forget the spot near the start and near the end, like a bookmark you no longer need.
@@ -145,8 +148,14 @@ class State:
         elif position >= 15:
             self.resume.pop(uri, None)
             self.resume[uri] = round(position, 1)
+            if duration:
+                self.lengths[uri] = round(duration, 1)
             while len(self.resume) > self.MAX_RESUME:
                 self.resume.pop(next(iter(self.resume)))
+
+    def forget(self, uri):
+        self.resume.pop(uri, None)
+        self.lengths.pop(uri, None)
 
     def add_recent(self, uri, title):
         self.recent = [r for r in self.recent if r['uri'] != uri]
@@ -158,6 +167,7 @@ class State:
 
     def save(self):
         try:
-            _save(self._path, {'resume': self.resume, 'recent': self.recent})
+            self.lengths = {u: d for u, d in self.lengths.items() if u in self.resume}
+            _save(self._path, {'resume': self.resume, 'recent': self.recent, 'lengths': self.lengths})
         except OSError:
             pass

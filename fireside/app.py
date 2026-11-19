@@ -22,12 +22,13 @@ SHORTCUTS = [
     ]),
     ('Sound and picture', [
         ('Up', 'Volume up'), ('Down', 'Volume down'), ('m', 'Mute'),
-        ('b', 'Next audio track'), ('v', 'Next subtitle track'), ('a', 'Change video size'),
+        ('b', 'Next audio track'), ('v', 'Next subtitle track'),
+        ('g', 'Subtitles earlier'), ('h', 'Subtitles later'), ('a', 'Change video size'),
         ('s', 'Take a snapshot'), ('f', 'Fullscreen'), ('Escape', 'Leave fullscreen'),
     ]),
     ('Window', [
         ('<Ctrl>o', 'Open files'), ('<Ctrl><Shift>o', 'Open a folder'), ('<Ctrl>l', 'Open a location'),
-        ('F9', 'Show or hide the queue'), ('<Ctrl>e', 'Effects and filters'),
+        ('F9', 'Show or hide the queue'), ('<Ctrl>m', 'Mini player'), ('<Ctrl>e', 'Effects and filters'),
         ('<Ctrl>i', 'Media information'), ('<Ctrl>s', 'Save the queue as a playlist'),
         ('<Ctrl>comma', 'Preferences'), ('<Ctrl>q', 'Quit'),
     ]),
@@ -57,6 +58,8 @@ class FiresideApp(Adw.Application):
         self.thumbs = Thumbnailer()
         self.music = MusicIndex([music_dir()])
         self.playlists = PlaylistStore()
+        from .livetv import LiveTV
+        self.livetv = LiveTV()
 
         for name, cb in (('preferences', self._prefs), ('shortcuts', self._shortcuts),
                          ('about', self._about), ('quit', lambda *_: self._quit())):
@@ -67,7 +70,7 @@ class FiresideApp(Adw.Application):
                                ('app.shortcuts', ['<Ctrl>question']), ('win.open-files', ['<Ctrl>o']),
                                ('win.open-folder', ['<Ctrl><Shift>o']), ('win.open-location', ['<Ctrl>l']),
                                ('win.effects', ['<Ctrl>e']), ('win.info', ['<Ctrl>i']),
-                               ('win.save-playlist', ['<Ctrl>s'])):
+                               ('win.save-playlist', ['<Ctrl>s']), ('win.mini', ['<Ctrl>m'])):
             self.set_accels_for_action(action, accels)
 
     def _window(self):

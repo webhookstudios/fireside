@@ -107,6 +107,13 @@ class Playlist(GObject.Object):
         self._discover()
         return min(first, len(self.items) - 1)
 
+    def add_entries(self, entries):
+        """(uri, title) pairs, kept as given: for channels and other streams with names."""
+        for uri, title in entries:
+            self.items.append(Item(uri, title))
+        self._reshuffle()
+        self.emit('changed')
+
     def remove(self, index):
         if not 0 <= index < len(self.items):
             return

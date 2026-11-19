@@ -1,3 +1,14 @@
+# Fireside 1.1.0
+
+- Live TV: free channels by country and category, with search and favorites.
+- Continue watching on Home, with how much is left.
+- Gapless music.
+- Mini player, from the bar or Ctrl+M.
+- Sleep timer with a gentle fade.
+- Subtitle timing: show subtitles earlier or later (G and H).
+- Play on a TV or speaker: DLNA, and Chromecast with python3-pychromecast.
+- The control bar drops its less-used buttons when the window is narrow.
+
 # Fireside 1.0.1
 
 - The volume slider shows the volume as a percentage while you drag it.

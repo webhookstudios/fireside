@@ -52,7 +52,7 @@ Architecture: all
 Maintainer: webhookstudios <354619278+webhookstudios@users.noreply.github.com>
 Installed-Size: $(du -sk "$STAGE/usr" | cut -f1)
 Depends: python3 (>= 3.10), python3-gi, python3-gi-cairo, python3-cairo, gir1.2-gtk-4.0, gir1.2-adw-1 (>= 1.8), gir1.2-gstreamer-1.0, gir1.2-gst-plugins-base-1.0, gstreamer1.0-plugins-base, gstreamer1.0-plugins-good, gstreamer1.0-gtk4
-Recommends: gstreamer1.0-libav, gstreamer1.0-plugins-bad, gstreamer1.0-plugins-ugly, gstreamer1.0-pipewire | gstreamer1.0-pulseaudio
+Recommends: python3-pychromecast, gstreamer1.0-libav, gstreamer1.0-plugins-bad, gstreamer1.0-plugins-ugly, gstreamer1.0-pipewire | gstreamer1.0-pulseaudio
 Section: video
 Priority: optional
 Homepage: https://webhookstudioapps.netlify.app
@@ -61,7 +61,8 @@ Description: Media player for videos, music and streams
  playlists. It has a library with folder thumbnails, favorite places,
  saved playlists and a music section, plus subtitles, audio and subtitle
  tracks, speed control, a ten-band equalizer, picture adjustments,
- snapshots and a play-as-audio mode. Nine color themes, accent colors and
+ snapshots, a play-as-audio mode, a mini player, a sleep timer,
+ gapless music and casting to TVs and speakers. Nine color themes, accent colors and
  three control bar styles let you make it your own.
  .
  Part of the Sedge family of webhookstudios apps.

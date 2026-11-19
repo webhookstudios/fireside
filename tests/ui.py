@@ -21,7 +21,8 @@ for var in ('XDG_CONFIG_HOME', 'XDG_STATE_HOME', 'XDG_CACHE_HOME', 'XDG_DATA_HOM
 import gi  # noqa: E402
 
 gi.require_version('Gtk', '4.0')
-from gi.repository import Gio, GLib, Gtk  # noqa: E402
+gi.require_version('Gst', '1.0')
+from gi.repository import Gio, GLib, Gst, Gtk  # noqa: E402
 
 from fireside.app import FiresideApp  # noqa: E402
 
@@ -270,6 +271,322 @@ def video_as_audio():
     check('music backdrop for audio-only video', win.media_stack.get_visible_child_name() == 'audio')
     win.show_page('player')
     shot('12-video-as-audio')
+
+
+# ---- a stand-in TV for the casting test: answers SSDP searches and DLNA commands ----------
+
+class FakeTV:
+    def __init__(self):
+        import socket, struct, threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        tv = self
+        self.actions = []
+        self.fetched = None
+        self.state = 'STOPPED'
+        self.uri = None
+
+        class H(BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_GET(self):
+                body = (f'<?xml version="1.0"?><root xmlns="urn:schemas-upnp-org:device-1-0"><device>'
+                        '<deviceType>urn:schemas-upnp-org:device:MediaRenderer:1</deviceType>'
+                        '<friendlyName>Test Living Room TV</friendlyName><serviceList><service>'
+                        '<serviceType>urn:schemas-upnp-org:service:AVTransport:1</serviceType>'
+                        '<controlURL>/avt</controlURL></service><service>'
+                        '<serviceType>urn:schemas-upnp-org:service:RenderingControl:1</serviceType>'
+                        '<controlURL>/rcs</controlURL></service></serviceList></device></root>').encode()
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/xml')
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def do_POST(self):
+                import re
+                import urllib.request
+                data = self.rfile.read(int(self.headers['Content-Length'])).decode()
+                action = self.headers['SOAPAction'].strip('"').split('#')[1]
+                tv.actions.append(action)
+                extra = ''
+                if action == 'SetAVTransportURI':
+                    tv.uri = re.search(r'<CurrentURI>(.*?)</CurrentURI>', data).group(1).replace('&amp;', '&')
+                    req = urllib.request.Request(tv.uri, headers={'Range': 'bytes=0-99'})
+                    with urllib.request.urlopen(req, timeout=5) as r:
+                        tv.fetched = (r.status, len(r.read()), r.headers.get('Content-Type'))
+                elif action == 'Play':
+                    tv.state = 'PLAYING'
+                elif action == 'Pause':
+                    tv.state = 'PAUSED_PLAYBACK'
+                elif action == 'Stop':
+                    tv.state = 'STOPPED'
+                elif action == 'GetTransportInfo':
+                    extra = f'<CurrentTransportState>{tv.state}</CurrentTransportState>'
+                elif action == 'GetPositionInfo':
+                    extra = '<RelTime>0:00:07</RelTime><TrackDuration>0:00:30</TrackDuration>'
+                body = (f'<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body>'
+                        f'<u:{action}Response xmlns:u="x">{extra}</u:{action}Response></s:Body></s:Envelope>').encode()
+                self.send_response(200)
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+        self.http = ThreadingHTTPServer(('127.0.0.1', 0), H)
+        threading.Thread(target=self.http.serve_forever, daemon=True).start()
+        loc = f'http://127.0.0.1:{self.http.server_address[1]}/desc.xml'
+        self.ssdp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+        self.ssdp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if hasattr(socket, 'SO_REUSEPORT'):
+            self.ssdp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+        self.ssdp.bind(('', 1900))
+        self.ssdp.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP,
+                             struct.pack('4sl', socket.inet_aton('239.255.255.250'), socket.INADDR_ANY))
+
+        def answer():
+            while True:
+                try:
+                    data, addr = self.ssdp.recvfrom(4096)
+                except OSError:
+                    return
+                if b'M-SEARCH' in data and b'MediaRenderer' in data:
+                    self.ssdp.sendto(('HTTP/1.1 200 OK\r\nST: urn:schemas-upnp-org:device:MediaRenderer:1\r\n'
+                                      f'LOCATION: {loc}\r\nUSN: uuid:fake-tv\r\n\r\n').encode(), addr)
+        threading.Thread(target=answer, daemon=True).start()
+
+
+@step(300)
+def subtitle_timing():
+    win = app.win
+    win.player.audio_only = False
+    win.audio_only_action.set_state(GLib.Variant('b', False))
+    win.open_sources([VIDEO], replace=True)
+
+
+@step(2500)
+def subtitle_timing_check():
+    win = app.win
+    win.activate_action('win.sub-later')
+    win.activate_action('win.sub-later')
+    check(f'subtitles moved 0.2 s later ({win.player.sub_offset})', abs(win.player.sub_offset - 0.2) < 0.01)
+    check('playbin got the subtitle offset', win.player.playbin.props.text_offset == 200_000_000)
+    win.activate_action('win.sub-reset')
+    check('subtitle timing back to normal', win.player.playbin.props.text_offset == 0)
+    win.player.seek(10)
+
+
+@step(1200)
+def continue_watching():
+    win = app.win
+    win.player.pause()
+    # The test clip is only 30 s and resume points are kept for files over a minute,
+    # so record one as if this were a 10-minute video.
+    app.state.remember(win.player.uri, 120, 600)
+    win.stop()
+
+
+@step(800)
+def continue_check():
+    win = app.win
+    n = 0
+    child = win.cont_box.get_first_child()
+    while child:
+        n += 1
+        child = child.get_next_sibling()
+    check(f'continue watching shows the video ({n})', n == 1 and win.cont_group.get_visible())
+    check('video length saved for the progress bar', app.state.lengths.get(Gio.File.new_for_path(VIDEO).get_uri()) == 600)
+    win.library.show_home()
+    shot('13-continue-watching')
+
+
+@step(400)
+def sleep_timer():
+    win = app.win
+    win.open_sources([VIDEO], replace=True)
+
+
+@step(2000)
+def sleep_check():
+    import time as _t
+    win = app.win
+    win.activate_action('win.sleep', GLib.Variant('s', '15'))
+    check('sleep timer shows in the header', win.sleep_btn.get_visible())
+    win._sleep_deadline = _t.monotonic() + 1.5   # pretend the 15 minutes are nearly up
+
+
+@step(3000)
+def sleep_fired():
+    win = app.win
+    check('sleep timer paused playback', win.player.state == 'paused')
+    check('sleep timer cleared', not win.sleep_btn.get_visible())
+    check('volume restored after the fade', abs(win.player.playbin.get_volume(
+        __import__('gi.repository.GstAudio', fromlist=['x']).StreamVolumeFormat.CUBIC) - app.settings['volume']) < 0.02)
+
+
+@step(300)
+def gapless_start():
+    win = app.win
+    songs = [os.path.join(MEDIA, 'evening.mp3'), os.path.join(MEDIA, 'morning.mp3')]
+    win.play_list([Gio.File.new_for_path(p).get_uri() for p in songs], 0, show_player=True)
+
+
+@step(1500)
+def gapless_seek():
+    win = app.win
+    check('next song planned for gapless', win._gapless_next is not None and win._gapless_next.endswith('morning.mp3'))
+    win.player.seek(win.player.duration - 1.5)
+
+
+@step(3500)
+def gapless_check():
+    win = app.win
+    p = win.player
+    check('moved to the next song without reloading', p.uri.endswith('morning.mp3') and p._streams_started >= 2)
+    check('queue marks the second song', win.playlist.current == 1)
+    check(f'title follows the song ({win.wtitle.get_title()!r})', win.wtitle.get_title() == 'Morning Walk')
+    check('still playing', p.state == 'playing')
+
+
+@step(300)
+def mini_open():
+    app.win.activate_action('win.mini')
+
+
+@step(800)
+def mini_check():
+    win = app.win
+    check(f'mini player open, main window hidden (mini={win.mini is not None and win.mini.get_visible()}, main={win.get_visible()})',
+          win.mini is not None and win.mini.get_visible() and not win.get_visible())
+    if win.mini:
+        check('mini shows the song', win.mini.title.get_label() == 'Morning Walk')
+        mini = win.mini
+        w, h = mini.get_width(), mini.get_height()
+        snap = Gtk.Snapshot()
+        Gtk.WidgetPaintable.new(mini).snapshot(snap, w, h)
+        node = snap.to_node()
+        if SHOTS and node:
+            mini.get_renderer().render_texture(node, None).save_to_png(os.path.join(SHOTS, '14-mini.png'))
+        win.mini.back()
+
+
+@step(600)
+def mini_closed():
+    win = app.win
+    check('back to the full window', win.mini is None and win.get_visible())
+    global tv
+    tv = FakeTV()
+    win.open_sources([VIDEO], replace=True)
+
+
+@step(2000)
+def cast_find():
+    from fireside import cast
+    found = cast.find_dlna(timeout=2)
+    names = [r.name for r in found]
+    check(f'found the test TV on the network ({names})', 'Test Living Room TV' in names)
+    rec = next((r for r in found if r.name == 'Test Living Room TV'), None)
+    if rec:
+        app.win.start_cast(rec)
+
+
+@step(3500)
+def cast_check():
+    win = app.win
+    check('TV was told to play', 'SetAVTransportURI' in tv.actions and 'Play' in tv.actions)
+    check(f'TV could fetch the video ({tv.fetched})', tv.fetched is not None and tv.fetched[0] == 206
+          and tv.fetched[1] == 100 and tv.fetched[2] == 'video/x-matroska')
+    check('local player paused while casting', win.player.playbin.get_state(0)[1] != Gst.State.PLAYING)
+    check('banner shows the TV', win.cast_banner.get_revealed() and 'Test Living Room TV' in win.cast_banner.get_title())
+    check(f'position comes from the TV ({win.controls._pos})', abs(win.controls._pos - 7) < 0.5)
+    shot('15-casting')
+    win.activate_action('win.toggle-play')
+
+
+@step(1500)
+def cast_pause():
+    win = app.win
+    check('pause reached the TV', 'Pause' in tv.actions)
+    win.stop_cast()
+
+
+@step(800)
+def cast_stopped():
+    win = app.win
+    check('casting stopped', win.cast is None and not win.cast_banner.get_revealed())
+    check('TV told to stop', tv.actions[-1] == 'Stop' or 'Stop' in tv.actions[-3:])
+
+
+@step(300)
+def live_tv_open():
+    win = app.win
+    win.stop()
+    win.library.show_tv()
+
+
+@step(6000)
+def live_tv_loaded():
+    page = app.win.library.tv_page
+    chans = app.livetv.channels.get(page.country, [])
+    check(f'live TV channels loaded for {page.country} ({len(chans)})', len(chans) > 50)
+    bad = [c.url for c in chans if 'jmp2.uk' in c.url or 'pluto' in c.url.lower()]
+    check('relayed streams from other services left out', not bad)
+    check('channels shown in the grid', page.store.get_n_items() == len(chans))
+    shot('16-live-tv')
+    names = [page.cat_model.get_string(i) for i in range(page.cat_model.get_n_items())]
+    if 'News' in names:
+        page.cat_drop.set_selected(names.index('News'))
+
+
+@step(2500)
+def live_tv_start():
+    global tv_tries
+    tv_tries = 0
+    try_channel()
+
+
+def try_channel():
+    """Channels come and go, so try up to five until one plays."""
+    global tv_tries
+    page = app.win.library.tv_page
+    if tv_tries < min(5, len(page.shown_channels)):
+        page._activate(None, tv_tries)
+        tv_tries += 1
+
+
+@step(9000)
+def live_tv_playing():
+    win = app.win
+    p = win.player
+    for _ in range(4):
+        if p.state == 'playing' and p.has_video:
+            break
+        try_channel()
+        ctx = GLib.MainContext.default()
+        end = GLib.get_monotonic_time() + 8_000_000
+        while GLib.get_monotonic_time() < end and not (p.state == 'playing' and p.has_video):
+            ctx.iteration(False)
+    check(f'a live channel plays ({win.wtitle.get_title()!r}, tried {tv_tries})', p.state == 'playing' and p.has_video)
+    check('time shows Live', win.controls.end_label.get_label() == 'Live')
+    check('channel queue lets Next flip channels', len(win.playlist) == len(win.library.tv_page.shown_channels))
+    shot('17-live-channel')
+
+
+@step(300)
+def narrow_bar():
+    win = app.win
+    win.split.set_show_sidebar(True)
+    win.set_default_size(980, 640)
+
+
+@step(1200)
+def narrow_check():
+    win = app.win
+    c = win.controls
+    avail = win.stage_bin.get_width()
+    need = c.get_width() + 40
+    check(f'control bar fits a narrow player ({c.get_width()} in {avail})', need <= avail + 1 or c.get_width() <= avail)
+    check('volume slider hidden when narrow', not c.vol.get_visible())
+    win.set_default_size(1100, 680)
 
 
 @step(300)
