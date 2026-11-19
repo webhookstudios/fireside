@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Fireside
+GenericName=Media Player
+Comment=Play videos, music and streams, with themes to make it your own
+Exec=fireside %U
+Icon=io.github.webhookstudios.Fireside
+Terminal=false
+StartupNotify=true
+StartupWMClass=io.github.webhookstudios.Fireside
+Categories=AudioVideo;Audio;Video;Player;GTK;GNOME;
+Keywords=sedge;video;movie;music;mp3;audio;player;media;playlist;subtitles;stream;film;
+MimeType=video/mp4;video/x-m4v;video/x-matroska;video/webm;video/x-msvideo;video/avi;video/msvideo;video/quicktime;video/x-ms-wmv;video/x-ms-asf;video/x-flv;video/mpeg;video/mp2t;video/vnd.mpegurl;video/3gpp;video/3gpp2;video/ogg;video/x-ogm+ogg;video/x-theora+ogg;video/dv;video/vnd.rn-realvideo;application/vnd.rn-realmedia;application/x-matroska;application/ogg;audio/mpeg;audio/mp3;audio/x-mp3;audio/mp4;audio/x-m4a;audio/aac;audio/x-aac;audio/flac;audio/x-flac;audio/ogg;audio/x-vorbis+ogg;audio/x-opus+ogg;audio/opus;audio/webm;audio/wav;audio/x-wav;audio/vnd.wave;audio/x-ms-wma;audio/x-aiff;audio/aiff;audio/x-ape;audio/x-wavpack;audio/x-matroska;audio/midi;audio/x-midi;audio/ac3;audio/vnd.dts;audio/x-mpegurl;audio/mpegurl;application/vnd.apple.mpegurl;application/x-mpegurl;audio/x-scpls;
