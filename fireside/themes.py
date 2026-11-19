@@ -238,6 +238,7 @@ scale.seek slider {
 scale.seek:hover slider, scale.seek:active slider, scale.seek:focus-visible slider { opacity: 1; }
 scale.vol trough { min-height: 4px; border-radius: 999px; }
 scale.vol highlight { min-height: 4px; border-radius: 999px; background-color: var(--accent-bg-color); }
+popover.vol-tip > contents { padding: 3px 8px; min-width: 0; font-weight: 700; font-feature-settings: "tnum"; }
 
 .seek-tip {
   background-color: var(--fs-osd-bg);

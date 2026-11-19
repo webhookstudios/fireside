@@ -2,7 +2,7 @@
 import gi
 
 gi.require_version('Gtk', '4.0')
-from gi.repository import Gio, GLib, Gtk  # noqa: E402
+from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from .playlist_view import fmt_time  # noqa: E402
 
@@ -87,7 +87,19 @@ class Controls(Gtk.Box):
         self.vol.set_increments(0.05, 0.1)
         self.vol.add_mark(1.0, Gtk.PositionType.BOTTOM, None)
         self.vol.set_value(self.settings['volume'])
-        self._vol_handler = self.vol.connect('value-changed', lambda s: self.settings.set('volume', round(s.get_value(), 3)))
+        self._vol_handler = self.vol.connect('value-changed', self._vol_moved)
+        # A small bubble with the percentage, shown only while the slider is being dragged.
+        self.vol_tip = Gtk.Popover(autohide=False, can_focus=False, can_target=False,
+                                   position=Gtk.PositionType.TOP)
+        self.vol_tip.add_css_class('vol-tip')
+        self.vol_tip_label = Gtk.Label(width_chars=4)
+        self.vol_tip_label.add_css_class('numeric')
+        self.vol_tip.set_child(self.vol_tip_label)
+        self.vol_tip.set_parent(self.vol)
+        self._vol_sliding = False
+        watch = Gtk.EventControllerLegacy(propagation_phase=Gtk.PropagationPhase.CAPTURE)
+        watch.connect('event', self._vol_event)
+        self.vol.add_controller(watch)
         self.full = _button('view-fullscreen-symbolic', 'Fullscreen (F)', 'win.fullscreen')
         self.audio_only = Gtk.ToggleButton(icon_name='audio-headphones-symbolic', focus_on_click=False,
                                            tooltip_text='Play as audio only', action_name='win.audio-only')
@@ -254,6 +266,35 @@ class Controls(Gtk.Box):
         n = self.settings['skip_seconds']
         self.back.set_tooltip_text(f'Back {n} seconds (Left)')
         self.fwd.set_tooltip_text(f'Forward {n} seconds (Right)')
+
+    def _vol_moved(self, scale):
+        self.settings.set('volume', round(scale.get_value(), 3))
+        if self._vol_sliding:
+            self._show_vol_tip()
+
+    def _vol_event(self, _c, event):
+        t = event.get_event_type()
+        if t in (Gdk.EventType.BUTTON_PRESS, Gdk.EventType.TOUCH_BEGIN):
+            self._vol_sliding = True
+            GLib.idle_add(lambda: self._show_vol_tip() and False)  # after the click moves the slider
+        elif t in (Gdk.EventType.BUTTON_RELEASE, Gdk.EventType.TOUCH_END, Gdk.EventType.TOUCH_CANCEL):
+            self._vol_sliding = False
+            self.vol_tip.popdown()
+        return False
+
+    def _show_vol_tip(self):
+        if not self._vol_sliding or not self.vol.get_mapped():
+            return
+        lo, hi = self.vol.get_adjustment().get_lower(), self.vol.get_adjustment().get_upper()
+        v = self.vol.get_value()
+        w = self.vol.get_width()
+        rect = Gdk.Rectangle()
+        rect.x = int(8 + (v - lo) / max(hi - lo, 1e-6) * max(1, w - 16))
+        rect.y, rect.width, rect.height = 0, 1, 1
+        self.vol_tip.set_pointing_to(rect)
+        self.vol_tip_label.set_label(f'{round(v * 100)}%')
+        if not self.vol_tip.get_visible():
+            self.vol_tip.popup()
 
     def _sync_volume(self):
         v = self.settings['volume']

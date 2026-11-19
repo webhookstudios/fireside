@@ -1,3 +1,9 @@
+# Fireside 1.0.1
+
+- The volume slider shows the volume as a percentage while you drag it.
+- Fixed the app icon not showing in the menu and the Open With list after `./install.sh`.
+- New screenshots.
+
 # Fireside 1.0.0
 
 First release.
