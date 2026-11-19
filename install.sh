@@ -9,4 +9,6 @@ cp "$ROOT"/data/icons/hicolor/scalable/actions/*.svg "$DATA/icons/hicolor/scalab
 sed -e "s|^Exec=.*|Exec=env PYTHONPATH=$ROOT python3 -m fireside %U|" \
     "$ROOT/data/io.github.webhookstudios.Fireside.desktop" > "$DATA/applications/io.github.webhookstudios.Fireside.desktop"
 update-desktop-database "$DATA/applications" 2>/dev/null || true
+# A user icon folder can carry an old icon list that hides new icons, so rebuild it.
+[ -f "$DATA/icons/hicolor/icon-theme.cache" ] && gtk-update-icon-cache -f -q --ignore-theme-index "$DATA/icons/hicolor" 2>/dev/null || true
 echo "Fireside is in your apps menu. Or run: PYTHONPATH=$ROOT python3 -m fireside"
