@@ -32,7 +32,7 @@ A media player for Linux. Fireside plays almost any video or music file, network
 
 ## Make it your own
 
-Preferences → Appearance has nine color themes (Sedge, Ember, Lantern, Midnight, Moss, Dusk, Slate, Driftwood and Birch), ten accent colors, and three control bars: **floating** over the video, **docked** under it, or one **minimal** row. You can also change corner roundness, seek bar thickness, bar opacity, how quickly the controls hide, and what music shows behind it (drifting embers, cover art or plain).
+The top of the main menu has a theme and accent picker for quick changes. Preferences → Appearance has nine color themes (Sedge, Ember, Lantern, Midnight, Moss, Dusk, Slate, Driftwood and Birch), ten accent colors, and three control bars: **floating** over the video, **docked** under it, or one **minimal** row. You can also change corner roundness, seek bar thickness, bar opacity, how quickly the controls hide, and what music shows behind it (drifting embers, cover art or plain).
 
 ![Theme choices in Preferences](docs/screenshots/themes.png)
 

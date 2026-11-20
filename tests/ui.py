@@ -585,7 +585,7 @@ def narrow_check():
     avail = win.stage_bin.get_width()
     need = c.get_width() + 40
     check(f'control bar fits a narrow player ({c.get_width()} in {avail})', need <= avail + 1 or c.get_width() <= avail)
-    check('volume slider hidden when narrow', not c.vol.get_visible())
+    check('volume slider hidden when narrow', not c.vol_box.get_visible())
     win.set_default_size(1100, 680)
 
 

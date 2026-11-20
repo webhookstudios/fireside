@@ -8,6 +8,8 @@
 - Subtitle timing: show subtitles earlier or later (G and H).
 - Play on a TV or speaker: DLNA, and Chromecast with python3-pychromecast.
 - The control bar drops its less-used buttons when the window is narrow.
+- Pick a theme and accent color right from the top of the main menu.
+- The volume shows as a percentage beside the slider while you move it (it didn't appear before).
 
 # Fireside 1.0.1
 

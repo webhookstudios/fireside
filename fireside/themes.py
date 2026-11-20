@@ -238,7 +238,7 @@ scale.seek slider {
 scale.seek:hover slider, scale.seek:active slider, scale.seek:focus-visible slider { opacity: 1; }
 scale.vol trough { min-height: 4px; border-radius: 999px; }
 scale.vol highlight { min-height: 4px; border-radius: 999px; background-color: var(--accent-bg-color); }
-popover.vol-tip > contents { padding: 3px 8px; min-width: 0; font-weight: 700; font-feature-settings: "tnum"; }
+.vol-pct { font-weight: 700; font-size: 0.86em; font-feature-settings: "tnum"; margin-left: 6px; }
 
 .seek-tip {
   background-color: var(--fs-osd-bg);
@@ -327,6 +327,9 @@ progressbar.mini-progress progress { background-color: var(--accent-bg-color); }
 .tv-star.on { color: var(--accent-color); }
 .tv-live { background-color: #c0392b; color: white; font-size: 0.7em; font-weight: 800;
            border-radius: 4px; padding: 1px 5px; letter-spacing: 0.05em; }
+.swatch { padding: 2px; border-radius: 999px; min-width: 0; min-height: 0; background: none; box-shadow: none; }
+.swatch:hover { box-shadow: 0 0 0 2px alpha(currentColor, 0.25); }
+.swatch.selected { box-shadow: 0 0 0 2px var(--accent-bg-color); }
 .eq-band scale { min-height: 150px; }
 .eq-band label { font-size: 0.8em; opacity: 0.75; font-feature-settings: "tnum"; }
 '''

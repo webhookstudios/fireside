@@ -68,6 +68,11 @@ class FiresideWindow(Adw.ApplicationWindow):
             self.header.pack_start(b)
         menu = Gtk.MenuButton(icon_name='open-menu-symbolic', tooltip_text='Main menu',
                               menu_model=self._main_menu(), primary=True)
+        from .theme_picker import ThemePicker
+        self.theme_picker = ThemePicker(self.settings)
+        if not menu.get_popover().add_child(self.theme_picker, 'theme-picker'):
+            print('theme picker: no place for it in the menu', flush=True)
+        self.main_menu_btn = menu
         self.header.pack_end(menu)
         self.pl_toggle = Gtk.ToggleButton(icon_name='sidebar-show-right-symbolic', tooltip_text='Queue (F9)',
                                           action_name='win.playlist')
@@ -136,11 +141,11 @@ class FiresideWindow(Adw.ApplicationWindow):
         self.stage_bin = Adw.BreakpointBin(child=self.tview, width_request=340, height_request=260)
         c = self.controls
         narrow = Adw.Breakpoint.new(Adw.BreakpointCondition.parse('max-width: 1000px'))
-        for w in (c.vol, c.fx_btn, c.audio_only, c.mini_btn):
+        for w in (c.vol_box, c.fx_btn, c.audio_only, c.mini_btn):
             narrow.add_setter(w, 'visible', False)
         self.stage_bin.add_breakpoint(narrow)
         tight = Adw.Breakpoint.new(Adw.BreakpointCondition.parse('max-width: 760px'))
-        for w in (c.vol, c.fx_btn, c.audio_only, c.mini_btn, c.speed_btn, c.cast_btn, c.back, c.fwd,
+        for w in (c.vol_box, c.fx_btn, c.audio_only, c.mini_btn, c.speed_btn, c.cast_btn, c.back, c.fwd,
                   c.audio_btn):
             tight.add_setter(w, 'visible', False)
         self.stage_bin.add_breakpoint(tight)
@@ -155,6 +160,11 @@ class FiresideWindow(Adw.ApplicationWindow):
 
     def _main_menu(self):
         menu = Gio.Menu()
+        look = Gio.Menu()
+        picker = Gio.MenuItem()
+        picker.set_attribute_value('custom', GLib.Variant('s', 'theme-picker'))
+        look.append_item(picker)
+        menu.append_section(None, look)
         s = Gio.Menu()
         s.append('Open Files…', 'win.open-files')
         s.append('Open Folder…', 'win.open-folder')
