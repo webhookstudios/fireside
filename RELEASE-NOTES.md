@@ -1,28 +1,11 @@
-# Fireside 1.1.0
+# Fireside 1.1.1
 
-- Live TV: free channels by country and category, with search and favorites.
-- Continue watching on Home, with how much is left.
-- Gapless music.
-- Mini player, from the bar or Ctrl+M.
-- Sleep timer with a gentle fade.
-- Subtitle timing: show subtitles earlier or later (G and H).
-- Play on a TV or speaker: DLNA, and Chromecast with python3-pychromecast.
-- The control bar drops its less-used buttons when the window is narrow.
-- Pick a theme and accent color right from the top of the main menu.
-- The volume shows as a percentage beside the slider while you move it (it didn't appear before).
+A new app icon. Everything else works exactly as before.
 
-# Fireside 1.0.1
+- The app icon is redrawn in the new Sedge style: a teal tile with a light symbol, the same size as before in the dock and the app grid.
 
-- The volume slider shows the volume as a percentage while you drag it.
-- Fixed the app icon not showing in the menu and the Open With list after `./install.sh`.
-- New screenshots.
+Install:
 
-# Fireside 1.0.0
-
-First release.
-
-- Plays videos, music, streams and playlists, with subtitles, track choice, speed, frame stepping, resume, snapshots, an equalizer and picture adjustments.
-- Library with folder thumbnails, favorite places, saved playlists and a music section by song, album and artist.
-- Play any video as audio only.
-- Nine color themes, accent colors and three control bar styles.
-- Media keys and the system's media controls.
+```bash
+sudo apt install ./fireside_1.1.1_all.deb
+```

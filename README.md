@@ -67,10 +67,10 @@ Fireside has only been tested on Ubuntu 26.04 with GNOME 50.
 
 ### With the deb package (recommended)
 
-Download `fireside_1.1.0_all.deb` from the [latest release](https://github.com/webhookstudios/fireside/releases/latest), then install it:
+Download `fireside_1.1.1_all.deb` from the [latest release](https://github.com/webhookstudios/fireside/releases/latest), then install it:
 
 ```bash
-sudo apt install ./fireside_1.1.0_all.deb
+sudo apt install ./fireside_1.1.1_all.deb
 ```
 
 The package also pulls in the common codecs. From a terminal, run `fireside`, optionally with files or a folder.
